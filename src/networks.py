@@ -39,7 +39,7 @@ def spectral_norm(module, mode=True):
     return module
 
 class Discriminator(BaseNetwork):
-    def __init__(self, in_channels, use_sigmoid=True, use_spectral_norm=True, init_weights=True):
+    def __init__(self, in_channels=1, use_sigmoid=True, use_spectral_norm=True, init_weights=True):
         super(Discriminator, self).__init__()
         self.use_sigmoid = use_sigmoid
 
@@ -322,8 +322,8 @@ class Upsample(nn.Module):
 ##---------- HINT -----------------------
 class HINT(nn.Module):
     def __init__(self,
-                 inp_channels=4,
-                 out_channels=3,
+                 inp_channels=2, # concatenation of image and mask
+                 out_channels=1, # output image
                  dim=48,
                  num_blocks=[4, 6, 6, 8],
                  heads=[1, 2, 4, 8],
@@ -415,9 +415,4 @@ class HINT(nn.Module):
 
         out_dec_level1 = (torch.tanh(out_dec_level1) + 1) / 2
         return out_dec_level1
-        
 
-
-
-        
-     

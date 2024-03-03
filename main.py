@@ -6,7 +6,7 @@ import torch
 import argparse
 from shutil import copyfile
 from src.config import Config
-from src.HINT import HINT
+from src.lafin import HINT
 import wandb
 
 def main(mode=None):
@@ -72,7 +72,8 @@ def load_config(mode=None):
     """
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--path', '--checkpoints', type=str, default='',
+    checkpoints_dir = os.path.join(os.getcwd(), os.path.join('HINT', 'checkpoints'))
+    parser.add_argument('--path', '--checkpoints', type=str, default=checkpoints_dir,
                         help='model checkpoints path (default: ./checkpoints)')
 
     parser.add_argument('--model', type=int, default='2', choices=[2])

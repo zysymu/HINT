@@ -1,20 +1,10 @@
 import os
 import glob
-import scipy
 import torch
-import random
 import numpy as np
 import torchvision.transforms.functional as F
 from torchvision import transforms
-from torch.utils.data import DataLoader
 from PIL import Image
-from imageio import imread
-# from scipy.misc import imread
-from skimage.color import rgb2gray
-# from scipy.misc import imresize
-from .utils import create_mask
-import cv2
-from skimage.feature import canny
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, config, flist, mask_flist, augment=True, training=True):
@@ -29,8 +19,6 @@ class Dataset(torch.utils.data.Dataset):
         self.input_size = config.INPUT_SIZE
         self.mask = config.MASK
 
-       
-
     def __len__(self):
         return len(self.data)
 
@@ -44,109 +32,68 @@ class Dataset(torch.utils.data.Dataset):
         return os.path.basename(name)
 
     def load_item(self, index):
-
         size = self.input_size
 
         # load image
-        img = imread(self.data[index])
-
+        img = np.load(self.data[index])
+        img_t = self.to_tensor(img)
+        
+        # apply transforms
         if size != 0:
-            img = self.resize(img, size, size, centerCrop=True)
-
-
+            img_t = self.resize(size)(img_t)
 
         # load mask
-        mask = self.load_mask(img, index)
+        mask_t = self.load_mask(img_t)
+        
+        # replace nans with 0s in test data
+        if not self.training:
+            img_t = torch.nan_to_num(img_t, nan=0)
+
+        return img_t, mask_t
 
 
-        return self.to_tensor(img), self.to_tensor(mask)
+    def load_mask(self, img_t):
+        positive = 255
+        
+        # if mode set to training, generate mask on the fly
+        if self.training:
+            # get random axis choice
+            percentile = 25
+            axis = np.random.choice(['i_line', 'x_line'], 1)[0]
 
+            # crop subset
+            if axis == 'i_line':
+                sample_size = np.round(img_t.size(1)*(percentile/100)).astype('int')
+                sample_start = np.random.choice(range(img_t.size(1)-sample_size), 1)[0]
+                sample_end = sample_start+sample_size
 
+                target_mask = torch.zeros(img_t.size(), dtype=int)
+                target_mask[:, :, sample_start:sample_end] = positive
 
+            else:
+                sample_size = np.round(img_t.size(1)*(percentile/100)).astype('int')
+                sample_start = np.random.choice(range(img_t.size(1)-sample_size), 1)[0]
+                sample_end = sample_start+sample_size
 
-    def load_lmk(self, target_shape, index, size_before, center_crop = True):
-
-        imgh,imgw = target_shape[0:2]
-        landmarks = np.genfromtxt(self.landmark_data[index])
-        landmarks = landmarks.reshape(self.config.LANDMARK_POINTS, 2)
-
-        if self.input_size != 0:
-            if center_crop:
-                side = np.minimum(size_before[0],size_before[1])
-                i = (size_before[0] - side) // 2
-                j = (size_before[1] - side) // 2
-                landmarks[0:self.config.LANDMARK_POINTS , 0] -= j
-                landmarks[0:self.config.LANDMARK_POINTS , 1] -= i
-
-            landmarks[0:self.config.LANDMARK_POINTS ,0] *= (imgw/side)
-            landmarks[0:self.config.LANDMARK_POINTS ,1] *= (imgh/side)
-        landmarks = (landmarks+0.5).astype(np.int16)
-
-        return landmarks
-
-
-    def load_mask(self, img, index):
-        imgh, imgw = img.shape[0:2]
-        mask_type = self.mask
-
-        # 50% no mask, 25% random block mask, 25% external mask, for landmark predictor training.
-        if mask_type == 5:
-            mask_type = 0 if np.random.uniform(0,1) >= 0.5 else 4
-
-        # no mask
-        if mask_type == 0:
-            return np.zeros((self.config.INPUT_SIZE,self.config.INPUT_SIZE))
-
-        # external + random block
-        if mask_type == 4:
-            mask_type = 1 if np.random.binomial(1, 0.5) == 1 else 3
-
-        # random block
-        if mask_type == 1:
-            return create_mask(imgw, imgh, imgw // 2, imgh // 2)
-
-        # center mask
-        if mask_type == 2:
-            return create_mask(imgw, imgh, imgw//2, imgh//2, x = imgw//4, y = imgh//4)
-
-        # external
-        if mask_type == 3:
-            mask_index = random.randint(0, len(self.mask_data) - 1)
-            mask = imread(self.mask_data[mask_index])
-            mask = self.resize(mask, imgh, imgw)
-            #mask = (mask > 100).astype(np.uint8) * 255
-            mask = (mask > 0).astype(np.uint8) * 255
-            return mask
-
-        # test mode: load mask non random
-        if mask_type == 6:
-            mask = imread(self.mask_data[index%len(self.mask_data)])
-            mask = self.resize(mask, imgh, imgw, centerCrop=False)
-            mask = rgb2gray(mask)
-            mask = (mask > 0).astype(np.uint8) * 255
-            # mask = 1- (mask < 200).astype(np.uint8) * 255
-            return mask
-
+                target_mask = torch.zeros(img_t.size(), dtype=int)
+                target_mask[:, sample_start:sample_end, :] = positive
+            
+            return target_mask
+        
+        # if we're on test mode, extract mask from image (our image already has a strip of nan values)
+        else:
+            target_mask = torch.zeros(img_t.size(), dtype=int)
+            nans = torch.argwhere(torch.isnan(img_t[:, :, :]))
+            indices = [(nans[:, i].min(), nans[:, i].max()+1) for i in range(len(img_t.size()))]
+            target_mask[indices[0][0]:indices[0][1], indices[1][0]:indices[1][1], indices[2][0]:indices[2][1]] = positive
+            
+            return target_mask
 
 
     def to_tensor(self, img):
-        img = Image.fromarray(img)
         img_t = F.to_tensor(img).float()
         return img_t
 
-    def resize(self, img, height, width, centerCrop=True):
-        imgh, imgw = img.shape[0:2]
-
-        if centerCrop and imgh != imgw:
-            # center crop
-            side = np.minimum(imgh, imgw)
-            j = (imgh - side) // 2
-            i = (imgw - side) // 2
-            img = img[j:j + side, i:i + side, ...]
-
-        # img = scipy.misc.imresize(img, [height, width])
-        img = np.array(Image.fromarray(img).resize((height, width)))
-        return img
 
     def load_flist(self, flist):
         if isinstance(flist, list):
@@ -155,37 +102,21 @@ class Dataset(torch.utils.data.Dataset):
         # flist: image file path, image directory path, text file flist path
         if isinstance(flist, str):
             if os.path.isdir(flist):
-                flist = list(glob.glob(flist + '/*.jpg')) + list(glob.glob(flist + '/*.png'))
+                flist = list(glob.glob(flist + '/*.npy'))
                 flist.sort()
                 return flist
 
             if os.path.isfile(flist):
                 try:
-                    return np.genfromtxt(flist, dtype=np.str, encoding='utf-8')
+                    return np.genfromtxt(flist, dtype=str, encoding='utf-8')
                 except Exception as e:
                     print(e)
                     return [flist]
         
         return []
+    
 
-    def create_iterator(self, batch_size):
-        while True:
-            sample_loader = DataLoader(
-                dataset=self,
-                batch_size=batch_size,
-                drop_last=True
-            )
-
-            for item in sample_loader:
-                yield item
-
-
-
-
-def image_transforms(load_size):
-
-    return transforms.Compose([
-
-        transforms.Resize(size=load_size, interpolation=Image.BILINEAR),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-    ])
+    def resize(self, load_size):
+        return transforms.Compose([
+            transforms.Resize(size=load_size, interpolation=Image.BILINEAR),
+        ])
