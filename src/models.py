@@ -60,7 +60,7 @@ class InpaintingModel(BaseModel):
         super(InpaintingModel, self).__init__('InpaintingModel', config)
 
         generator = HINT()
-        discriminator = Discriminator(in_channels=1, use_sigmoid=config.GAN_LOSS != 'hinge')
+        discriminator = Discriminator(in_channels=3, use_sigmoid=config.GAN_LOSS != 'hinge')
         if len(config.GPU) > 1:
             generator = nn.DataParallel(generator, config.GPU)
             discriminator = nn.DataParallel(discriminator , config.GPU)
@@ -192,4 +192,3 @@ def abs_smooth(x):
     minx = torch.min(absx,other=torch.ones(absx.shape).cuda())
     r = 0.5 *((absx-1)*minx + absx)
     return r
-

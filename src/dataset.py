@@ -48,6 +48,9 @@ class Dataset(torch.utils.data.Dataset):
         # replace nans with 0s in test data
         if not self.training:
             img_t = torch.nan_to_num(img_t, nan=0)
+        
+        img_t = img_t / 255.0
+        img_t = img_t.repeat(3, 1, 1)
 
         return img_t, mask_t
 

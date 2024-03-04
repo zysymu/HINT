@@ -1,6 +1,9 @@
+import torch
 import os
+import cv2
 import sys
 import time
+import random
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -9,6 +12,15 @@ from PIL import Image
 def create_dir(dir):
     if not os.path.exists(dir):
         os.makedirs(dir)
+
+
+def create_mask(width, height, mask_width, mask_height, x=None, y=None):
+    mask = np.zeros((height, width))
+    mask_x = x if x is not None else random.randint(0, width - mask_width)
+    mask_y = y if y is not None else random.randint(0, height - mask_height)
+    mask[mask_y:mask_y + mask_height, mask_x:mask_x + mask_width] = 1
+    return mask
+
 
 def stitch_images(inputs, *outputs, img_per_row=2):
     gap = 5
@@ -30,9 +42,19 @@ def stitch_images(inputs, *outputs, img_per_row=2):
     return img
 
 
+def imshow(img, title=''):
+    fig = plt.gcf()
+    fig.canvas.set_window_title(title)
+    plt.axis('off')
+    plt.imshow(img, interpolation='none')
+    plt.show()
+
+
 def imsave(img, path):
     im = Image.fromarray(img.cpu().numpy().astype(np.uint8).squeeze())
     im.save(path)
+
+
 
 
 class Progbar(object):

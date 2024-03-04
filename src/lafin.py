@@ -8,6 +8,8 @@ from .dataset import Dataset
 from .models import InpaintingModel
 from .utils import Progbar, create_dir, stitch_images, imsave
 from .metrics import PSNR
+from cv2 import circle
+from PIL import Image
 from skimage.metrics import structural_similarity as compare_ssim
 from skimage.metrics import peak_signal_noise_ratio as compare_psnr
 import wandb
@@ -236,22 +238,27 @@ class HINT():
                     img_per_row=1
                 )
 
-                path_masked = os.path.join(self.results_path,self.model_name,'masked_test')
-                path_result = os.path.join(self.results_path, self.model_name,'result_test')
-                path_joint = os.path.join(self.results_path,self.model_name,'joint_test')
+                path_masked = os.path.join(self.results_path,self.model_name,'masked4060')
+                path_result = os.path.join(self.results_path, self.model_name,'result4060')
+                path_joint = os.path.join(self.results_path,self.model_name,'joint4060')
 
 
-                name_png = self.test_dataset.load_name(index-1)[:-4]+'.png'
-                name_npy = self.test_dataset.load_name(index-1)[:-4]+'.npy'
+                name = self.test_dataset.load_name(index-1)[:-4]+'.png'
 
                 create_dir(path_masked)
                 create_dir(path_result)
                 create_dir(path_joint)
 
-                images_joint.save(os.path.join(path_joint,name_png))
-                np.save(os.path.join(path_result,name_npy), outputs_merged.cpu().numpy().squeeze())
+                masked_images = self.postprocess(images*(1-masks)+masks)[0]
+                images_result = self.postprocess(outputs_merged)[0]
 
-                print(name_npy + ' complete!')
+                print(os.path.join(path_joint,name[:-4]+'.png'))
+
+                images_joint.save(os.path.join(path_joint,name[:-4]+'.png'))
+                imsave(masked_images,os.path.join(path_masked,name))
+                imsave(images_result,os.path.join(path_result,name))
+
+                print(name + ' complete!')
 
             # inpaint with joint model
         torch.onnx.export(model, images_joint, 'model.onnx')
@@ -277,7 +284,7 @@ class HINT():
 
     def postprocess(self, img):
         # [0, 1] => [0, 255]
-        img = img * 255.0 # NOTE: check if this is actually necessary
+        img = img * 255.0
         img = img.permute(0, 2, 3, 1)
         return img.int()
 
@@ -309,4 +316,3 @@ class HINT():
 
         def get_mean_nme(self):
             return self.mean_nme
-

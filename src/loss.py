@@ -96,7 +96,6 @@ class VGG19(torch.nn.Module):
     def __init__(self):
         super(VGG19, self).__init__()
         features = models.vgg19(pretrained=True).features
-        
         self.relu1_1 = torch.nn.Sequential()
         self.relu1_2 = torch.nn.Sequential()
 
@@ -165,9 +164,6 @@ class VGG19(torch.nn.Module):
 
         for x in range(34, 36):
             self.relu5_4.add_module(str(x), features[x])
-        
-        # change to receive 1 channel input
-        self.relu1_1[0] = nn.Conv2d(1, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
 
         # don't need the gradients, just want the features
         for param in self.parameters():
