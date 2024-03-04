@@ -42,8 +42,8 @@ class Dataset(torch.utils.data.Dataset):
         if size != 0:
             img_t = self.resize(size)(img_t)
 
-        # load mask
-        mask_t = self.load_mask(img_t)
+        # load mask (VERY IMPORTANT TO CONVERT IT TO FLOAT)
+        mask_t = self.load_mask(img_t).float()
         
         # replace nans with 0s in test data
         if not self.training:
@@ -53,7 +53,7 @@ class Dataset(torch.utils.data.Dataset):
 
 
     def load_mask(self, img_t):
-        positive = 255
+        positive = 1
         
         # if mode set to training, generate mask on the fly
         if self.training:
