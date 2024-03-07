@@ -7,11 +7,18 @@ from torchvision import transforms
 from PIL import Image
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, config, flist, mask_flist, augment=True, training=True):
+    def __init__(self, config, flist, mask_flist, max_iterations, augment=True, training=True):
         super(Dataset, self).__init__()
         self.config = config
         self.augment = augment
         self.training = training
+        
+        # variables related to the dynamic size of the training mask depending on the number of examples
+        self.percentile = 1
+        self.current_iteration = 0
+        self.max_iterations = max_iterations
+        self.fixed_percentile_at = 0.5  # pct of iterations after which percentile becomes fixed at 25
+
 
         self.data = self.load_flist(flist)
         self.mask_data = self.load_flist(mask_flist)
@@ -23,8 +30,17 @@ class Dataset(torch.utils.data.Dataset):
         return len(self.data)
 
     def __getitem__(self, index):
+        # update percentile
+        self.current_iteration += 1
+        if self.current_iteration <= self.fixed_percentile_at * self.max_iterations:
+            # linear growth from 5 to 24 over the first `fixed_percentile_at`% of iterations
+            self.percentile = int(5 + (self.current_iteration / (self.fixed_percentile_at * self.max_iterations)) * 19)
+        else:
+            # set percentile to 25 for the remaining iterations
+            self.percentile = 25
 
         item = self.load_item(index)
+        
         return item
 
     def load_name(self, index):
@@ -32,27 +48,31 @@ class Dataset(torch.utils.data.Dataset):
         return os.path.basename(name)
 
     def load_item(self, index):
-        size = self.input_size
-
         # load image
         img = np.load(self.data[index])
-        img_t = self.to_tensor(img)
+        img_t = self.process_image(img)
         
-        # apply transforms
-        if size != 0:
-            img_t = self.resize(size)(img_t)
-
+        img_t = img_t.repeat(3, 1, 1) # MODIFICAR AQUI
+        
         # load mask (VERY IMPORTANT TO CONVERT IT TO FLOAT)
         mask_t = self.load_mask(img_t).float()
         
         # replace nans with 0s in test data
         if not self.training:
             img_t = torch.nan_to_num(img_t, nan=0)
-        
-        img_t = img_t / 255.0
-        img_t = img_t.repeat(3, 1, 1)
 
         return img_t, mask_t
+    
+    def process_image(self, img):
+        img_t = self.to_tensor(img)
+        
+        # apply transforms
+        if self.input_size != 0:
+            img_t = self.resize(self.input_size)(img_t)
+        
+        img_t = img_t / 255.0
+        
+        return img_t
 
 
     def load_mask(self, img_t):
@@ -61,12 +81,11 @@ class Dataset(torch.utils.data.Dataset):
         # if mode set to training, generate mask on the fly
         if self.training:
             # get random axis choice
-            percentile = 25
             axis = np.random.choice(['i_line', 'x_line'], 1)[0]
 
             # crop subset
             if axis == 'i_line':
-                sample_size = np.round(img_t.size(1)*(percentile/100)).astype('int')
+                sample_size = np.round(img_t.size(1)*(self.percentile/100)).astype('int')
                 sample_start = np.random.choice(range(img_t.size(1)-sample_size), 1)[0]
                 sample_end = sample_start+sample_size
 
@@ -74,7 +93,7 @@ class Dataset(torch.utils.data.Dataset):
                 target_mask[:, :, sample_start:sample_end] = positive
 
             else:
-                sample_size = np.round(img_t.size(1)*(percentile/100)).astype('int')
+                sample_size = np.round(img_t.size(1)*(self.percentile/100)).astype('int')
                 sample_start = np.random.choice(range(img_t.size(1)-sample_size), 1)[0]
                 sample_end = sample_start+sample_size
 
@@ -119,7 +138,7 @@ class Dataset(torch.utils.data.Dataset):
         return []
     
 
-    def resize(self, load_size):
+    def resize(self, size):
         return transforms.Compose([
-            transforms.Resize(size=load_size, interpolation=Image.BILINEAR),
+            transforms.Resize(size=size, interpolation=Image.BILINEAR),
         ])

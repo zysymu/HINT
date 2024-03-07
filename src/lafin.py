@@ -45,7 +45,14 @@ class HINT():
         if self.config.MODE == 1:
 
             if self.config.MODEL == 2:
-                self.train_dataset = Dataset(config, config.TRAIN_INPAINT_IMAGE_FLIST, config.TRAIN_MASK_FLIST, augment=True, training=True)
+                self.train_dataset = Dataset(
+                    config,
+                    config.TRAIN_INPAINT_IMAGE_FLIST,
+                    config.TRAIN_MASK_FLIST,
+                    max_iterations=int(float((self.config.MAX_ITERS))),
+                    augment=True,
+                    training=True
+                )
 
         # test mode
         if self.config.MODE == 2:
