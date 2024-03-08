@@ -52,14 +52,14 @@ class Dataset(torch.utils.data.Dataset):
         img = np.load(self.data[index])
         img_t = self.process_image(img)
         
-        img_t = img_t.repeat(3, 1, 1) # MODIFICAR AQUI
-        
         # load mask (VERY IMPORTANT TO CONVERT IT TO FLOAT)
         mask_t = self.load_mask(img_t).float()
         
         # replace nans with 0s in test data
         if not self.training:
             img_t = torch.nan_to_num(img_t, nan=0)
+
+        img_t = img_t.repeat(3, 1, 1) # MODIFICAR AQUI
 
         return img_t, mask_t
     
