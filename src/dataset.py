@@ -7,45 +7,51 @@ from torchvision import transforms
 from PIL import Image
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, config, flist, mask_flist, max_iterations, augment=True, training=True):
+    def __init__(self, config, training=True):
         super(Dataset, self).__init__()
         self.config = config
-        self.augment = augment
         self.training = training
+        
+        # get flist based on the dataset mode
+        if self.training:
+            flist = config.TRAIN_INPAINT_IMAGE_FLIST
+        else:
+            flist = config.TEST_INPAINT_IMAGE_FLIST
+        
+        self.data = self.load_flist(flist)
+        self.input_size = config.INPUT_SIZE
         
         # variables related to the dynamic size of the training mask depending on the number of examples
         self.percentile = 1
         self.current_iteration = 0
-        self.max_iterations = max_iterations
+        self.max_iterations = int(float((self.config.MAX_ITERS)))
         self.fixed_percentile_at = 0.5  # pct of iterations after which percentile becomes fixed at 25
 
-
-        self.data = self.load_flist(flist)
-        self.mask_data = self.load_flist(mask_flist)
-
-        self.input_size = config.INPUT_SIZE
-        self.mask = config.MASK
 
     def __len__(self):
         return len(self.data)
 
+
     def __getitem__(self, index):
-        # update percentile
-        self.current_iteration += 1
-        if self.current_iteration <= self.fixed_percentile_at * self.max_iterations:
-            # linear growth from 5 to 24 over the first `fixed_percentile_at`% of iterations
-            self.percentile = int(5 + (self.current_iteration / (self.fixed_percentile_at * self.max_iterations)) * 19)
-        else:
-            # set percentile to 25 for the remaining iterations
-            self.percentile = 25
+        if self.training:
+            # update percentile
+            self.current_iteration += 1
+            if self.current_iteration <= self.fixed_percentile_at * self.max_iterations:
+                # linear growth from 5 to 24 over the first `fixed_percentile_at`% of iterations
+                self.percentile = int(5 + (self.current_iteration / (self.fixed_percentile_at * self.max_iterations)) * 19)
+            else:
+                # set percentile to 25 for the remaining iterations
+                self.percentile = 25
 
         item = self.load_item(index)
         
         return item
 
+
     def load_name(self, index):
         name = self.data[index]
         return os.path.basename(name)
+
 
     def load_item(self, index):
         # load image
@@ -54,14 +60,16 @@ class Dataset(torch.utils.data.Dataset):
         
         # load mask (VERY IMPORTANT TO CONVERT IT TO FLOAT)
         mask_t = self.load_mask(img_t).float()
-        
-        # replace nans with 0s in test data
-        if not self.training:
-            img_t = torch.nan_to_num(img_t, nan=0)
 
-        img_t = img_t.repeat(3, 1, 1) # MODIFICAR AQUI
+        # test (inference) mode 
+        if not self.training:
+            img_t = torch.nan_to_num(img_t, nan=0)    
+        
+        # make 3 channels by copying the image
+        img_t = img_t.repeat(3, 1, 1) # could try adding slices from before & after
 
         return img_t, mask_t
+    
     
     def process_image(self, img):
         img_t = self.to_tensor(img)
@@ -120,7 +128,7 @@ class Dataset(torch.utils.data.Dataset):
     def load_flist(self, flist):
         if isinstance(flist, list):
             return flist
-
+        
         # flist: image file path, image directory path, text file flist path
         if isinstance(flist, str):
             if os.path.isdir(flist):
@@ -136,7 +144,7 @@ class Dataset(torch.utils.data.Dataset):
                     return [flist]
         
         return []
-    
+
 
     def resize(self, size):
         return transforms.Compose([

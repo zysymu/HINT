@@ -72,7 +72,7 @@ def load_config(mode=None):
     """
 
     parser = argparse.ArgumentParser()
-    checkpoints_dir = os.path.join(os.getcwd(), os.path.join('HINT', 'checkpoints'))
+    checkpoints_dir = os.path.join(os.getcwd(), os.path.join('HINT', './checkpoints'))
     parser.add_argument('--path', '--checkpoints', type=str, default=checkpoints_dir,
                         help='model checkpoints path (default: ./checkpoints)')
 
@@ -81,7 +81,6 @@ def load_config(mode=None):
     # test mode
     if mode == 2:
         parser.add_argument('--input', type=str, help='path to the input images directory or an input image')
-        parser.add_argument('--mask', type=str, help='path to the masks directory or a mask file')
         parser.add_argument('--output', type=str, help='path to the output directory')
 
     args = parser.parse_args()
@@ -113,9 +112,6 @@ def load_config(mode=None):
 
         if args.input is not None:
             config.TEST_INPAINT_IMAGE_FLIST = args.input
-
-        if args.mask is not None:
-            config.TEST_MASK_FLIST = args.mask
 
         if args.output is not None:
             config.RESULTS = args.output

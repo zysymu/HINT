@@ -47,22 +47,17 @@ class HINT():
             if self.config.MODEL == 2:
                 self.train_dataset = Dataset(
                     config,
-                    config.TRAIN_INPAINT_IMAGE_FLIST,
-                    config.TRAIN_MASK_FLIST,
-                    max_iterations=int(float((self.config.MAX_ITERS))),
-                    augment=True,
                     training=True
                 )
 
         # test mode
         if self.config.MODE == 2:
             if self.config.MODEL == 2:
-                print('model == 2')
-                self.test_dataset = Dataset(config, config.TEST_INPAINT_IMAGE_FLIST, config.TEST_MASK_FLIST,
-                                            augment=False, training=False)
+                self.test_dataset = Dataset(
+                    config,
+                    training=False
+                )
 
-
-        self.samples_path = os.path.join(config.PATH, 'samples')
         self.results_path = os.path.join(config.PATH, 'results')
 
         if config.RESULTS is not None:
@@ -74,7 +69,6 @@ class HINT():
         self.log_file = os.path.join(config.PATH, 'log_' + model_name + '.dat')
 
     def load(self):
-
         if self.config.MODEL == 2:
             self.inpaint_model.load()
 
@@ -154,23 +148,12 @@ class HINT():
                     )
 
 
-                    path_masked = os.path.join(self.results_path,self.model_name,'masked')
-                    path_result = os.path.join(self.results_path, self.model_name,'result')
-                    path_joint = os.path.join(self.results_path,self.model_name,'joint')
+                    path_joint = os.path.join(self.results_path,self.model_name,'train_joint')
                     name = self.train_dataset.load_name(epoch-1)[:-4]+'.png'
 
-                    create_dir(path_masked)
-                    create_dir(path_result)
                     create_dir(path_joint)
-
-                    masked_images = self.postprocess(images*(1-masks)+masks)[0]
-                    images_result = self.postprocess(outputs_merged)[0]
-
-                    print(os.path.join(path_joint,name[:-4]+'.png'))
-
-                    images_joint.save(os.path.join(path_joint,name[:-4]+'.png'))
-                    imsave(masked_images,os.path.join(path_masked,name))
-                    imsave(images_result,os.path.join(path_result,name))
+                    #images_joint.save(os.path.join(path_joint,name[:-4]+'.png'))
+                    images_joint.save(os.path.join(path_joint,f'epoch{epoch}.png'))
 
                     print(name + ' complete!')
                     
@@ -186,7 +169,7 @@ class HINT():
         print('\nEnd training....')
 
 
-    def test(self):
+    def val(self):
 
         self.inpaint_model.eval()
         model = self.config.MODEL
@@ -276,8 +259,54 @@ class HINT():
                                                                                  np.average(ssim_list),
                                                                                  np.average(l1_list),
                                                                                  np.average(lpips_list)))
+        
+    
+    def test(self):
+        self.inpaint_model.eval()
+        model = self.config.MODEL
+        create_dir(self.results_path)
 
+        test_loader = DataLoader(
+            dataset=self.test_dataset,
+            batch_size=1,
+        )
+        
+        index = 0
+        for items in test_loader:
+            images, masks = self.cuda(*items)
+            index += 1
 
+            # inpaint model
+            if model == 2:
+                inputs = (images * (1 - masks))
+                outputs_img = self.inpaint_model(images, masks)
+                outputs_merged = (outputs_img * masks) + (images * (1 - masks))
+                
+                images_joint = stitch_images(
+                    self.postprocess(images),
+                    self.postprocess(inputs),
+                    self.postprocess(outputs_img),
+                    self.postprocess(outputs_merged),
+                    img_per_row=1
+                )
+
+                path_result = os.path.join(self.results_path, self.model_name,'test_result')
+                path_joint = os.path.join(self.results_path,self.model_name,'test_joint')
+
+                name_npy = self.test_dataset.load_name(index-1)[:-4]+'.npy'
+                name_png = self.test_dataset.load_name(index-1)[:-4]+'.png'
+
+                create_dir(path_result)
+                create_dir(path_joint)
+
+                images_result = self.postprocess(outputs_merged)[0].cpu().numpy().squeeze()
+
+                # save joint image
+                images_joint.save(os.path.join(path_joint,name_png))
+                
+                np.save(images_result, os.path.join(path_result,name_npy))
+
+                print(name_npy + ' complete!')
 
 
     def log(self, logs):
@@ -286,8 +315,10 @@ class HINT():
             f.write('%s\n' % ' '.join([str(item[1]) for item in logs]))
             print('finish load')
 
+
     def cuda(self, *args):
         return (item.to(self.config.DEVICE) for item in args)
+
 
     def postprocess(self, img):
         # [0, 1] => [0, 255]
@@ -309,7 +340,8 @@ class HINT():
         ssim = compare_ssim(gt, pre, multichannel=True, data_range=255)
 
         return psnr, ssim
-    
+
+
     class cal_mean_nme():
         sum = 0
         amount = 0
