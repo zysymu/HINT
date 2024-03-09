@@ -2,19 +2,17 @@ import os
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from .dataset import Dataset
 from .models import InpaintingModel
 from .utils import Progbar, create_dir, stitch_images, imsave
 from .metrics import PSNR
-from cv2 import circle
-from PIL import Image
 from skimage.metrics import structural_similarity as compare_ssim
 from skimage.metrics import peak_signal_noise_ratio as compare_psnr
 import wandb
 import lpips
 import torchvision
+from tqdm import tqdm
 
 '''
 This repo is modified basing on Edge-Connect
@@ -272,41 +270,21 @@ class HINT():
         )
         
         index = 0
-        for items in test_loader:
+        for items in tqdm(test_loader):
             images, masks = self.cuda(*items)
             index += 1
 
             # inpaint model
             if model == 2:
-                inputs = (images * (1 - masks))
                 outputs_img = self.inpaint_model(images, masks)
                 outputs_merged = (outputs_img * masks) + (images * (1 - masks))
-                
-                images_joint = stitch_images(
-                    self.postprocess(images),
-                    self.postprocess(inputs),
-                    self.postprocess(outputs_img),
-                    self.postprocess(outputs_merged),
-                    img_per_row=1
-                )
 
                 path_result = os.path.join(self.results_path, self.model_name,'test_result')
-                path_joint = os.path.join(self.results_path,self.model_name,'test_joint')
-
-                name_npy = self.test_dataset.load_name(index-1)[:-4]+'.npy'
-                name_png = self.test_dataset.load_name(index-1)[:-4]+'.png'
-
                 create_dir(path_result)
-                create_dir(path_joint)
+                name_npy = self.test_dataset.load_name(index-1)[:-4]+'.npy'
 
-                images_result = self.postprocess(outputs_merged)[0].cpu().numpy().squeeze()
-
-                # save joint image
-                images_joint.save(os.path.join(path_joint,name_png))
-                
-                np.save(images_result, os.path.join(path_result,name_npy))
-
-                print(name_npy + ' complete!')
+                images_result = self.postprocess(outputs_merged, integer=False)[0].cpu().numpy().squeeze()                
+                np.save(os.path.join(path_result,name_npy), images_result)
 
 
     def log(self, logs):
@@ -320,11 +298,15 @@ class HINT():
         return (item.to(self.config.DEVICE) for item in args)
 
 
-    def postprocess(self, img):
+    def postprocess(self, img, integer=True):
         # [0, 1] => [0, 255]
         img = img * 255.0
         img = img.permute(0, 2, 3, 1)
-        return img.int()
+        
+        if integer:
+            return img.int()
+        else:
+            return img.float()
 
 
     def metric(self, gt, pre):

@@ -14,7 +14,7 @@ WD: 0
 LR_Decay: 1
 
 BATCH_SIZE: 4               # input batch size for training
-INPUT_SIZE: 256               # input image size for training 0 for original size
+INPUT_SIZE: 300               # input image size for training 0 for original size
 MAX_ITERS: 300001                 # maximum number of iterations to train the model
 
 L1_LOSS_WEIGHT: 1             # l1 loss weight

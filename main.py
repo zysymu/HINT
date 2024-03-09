@@ -72,9 +72,9 @@ def load_config(mode=None):
     """
 
     parser = argparse.ArgumentParser()
-    checkpoints_dir = os.path.join(os.getcwd(), os.path.join('HINT', './checkpoints'))
+    checkpoints_dir = os.path.join(os.getcwd(), os.path.join('HINT', '../checkpoints'))
     parser.add_argument('--path', '--checkpoints', type=str, default=checkpoints_dir,
-                        help='model checkpoints path (default: ./checkpoints)')
+                        help='model checkpoints path (default: ../checkpoints)')
 
     parser.add_argument('--model', type=int, default='2', choices=[2])
 
