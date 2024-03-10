@@ -24,7 +24,11 @@ class Dataset(torch.utils.data.Dataset):
         self.input_size = config.INPUT_SIZE
         
         # variables related to the dynamic size of the training mask depending on the number of examples
-        self.percentile = 1
+        if self.training == 'train':
+            self.percentile = 1
+        if self.training == 'val':
+            self.percentile = 25
+        
         self.current_iteration = 0
         self.max_iterations = int(float((self.config.MAX_ITERS)))
         self.fixed_percentile_at = 0.5  # pct of iterations after which percentile becomes fixed at 25
