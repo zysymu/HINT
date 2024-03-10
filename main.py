@@ -72,11 +72,9 @@ def load_config(mode=None):
     """
 
     parser = argparse.ArgumentParser()
-    checkpoints_dir = os.path.join(os.getcwd(), os.path.join('HINT', '../checkpoints'))
+    checkpoints_dir = os.path.join(os.getcwd(), os.path.join('HINT', 'checkpoints'))
     parser.add_argument('--path', '--checkpoints', type=str, default=checkpoints_dir,
-                        help='model checkpoints path (default: ../checkpoints)')
-
-    parser.add_argument('--model', type=int, default='2', choices=[2])
+                        help='model checkpoints path (default: checkpoints)')
 
     # test mode
     if mode == 2:
@@ -102,13 +100,10 @@ def load_config(mode=None):
     # train mode
     if mode == 1:
         config.MODE = 1
-        if args.model:
-            config.MODEL = args.model
 
     # test mode
     elif mode == 2:
         config.MODE = 2
-        config.MODEL = args.model if args.model is not None else 3
 
         if args.input is not None:
             config.TEST_INPAINT_IMAGE_FLIST = args.input

@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from .dataset import Dataset
 from .models import InpaintingModel
-from .utils import Progbar, create_dir, stitch_images, imsave
+from .utils import Progbar, create_dir, stitch_images
 from .metrics import PSNR
 from skimage.metrics import structural_similarity as compare_ssim
 from skimage.metrics import peak_signal_noise_ratio as compare_psnr
@@ -23,9 +23,7 @@ class HINT():
     def __init__(self, config):
         self.config = config
 
-
-        if config.MODEL == 2:
-            model_name = 'inpaint'
+        model_name = 'inpaint'
 
         self.debug = False
         self.model_name = model_name
@@ -38,23 +36,27 @@ class HINT():
 
         self.psnr = PSNR(255.0).to(config.DEVICE)
         self.cal_mae = nn.L1Loss(reduction='sum')
+        
+        self.best_ssim = 0
 
         #train mode
         if self.config.MODE == 1:
-
-            if self.config.MODEL == 2:
-                self.train_dataset = Dataset(
-                    config,
-                    training=True
-                )
+            self.train_dataset = Dataset(
+                config,
+                training='train'
+            )
+            
+            self.val_dataset = Dataset(
+                config,
+                training='val'
+            )
 
         # test mode
         if self.config.MODE == 2:
-            if self.config.MODEL == 2:
-                self.test_dataset = Dataset(
-                    config,
-                    training=False
-                )
+            self.test_dataset = Dataset(
+                config,
+                training='test'
+            )
 
         self.results_path = os.path.join(config.PATH, 'results')
 
@@ -67,13 +69,11 @@ class HINT():
         self.log_file = os.path.join(config.PATH, 'log_' + model_name + '.dat')
 
     def load(self):
-        if self.config.MODEL == 2:
-            self.inpaint_model.load()
+        self.inpaint_model.load()
 
 
     def save(self):
-        if self.config.MODEL == 2:
-            self.inpaint_model.save()
+        self.inpaint_model.save()
 
 
     def train(self):
@@ -89,7 +89,6 @@ class HINT():
 
         epoch = 0
         keep_training = True
-        model = self.config.MODEL
         max_iteration = int(float((self.config.MAX_ITERS)))
         total = len(self.train_dataset)
         while(keep_training):
@@ -100,23 +99,21 @@ class HINT():
 
 
             for items in train_loader:
-
                 self.inpaint_model.train()
-                if model == 2:
-                    images, masks = self.cuda(*items)
-                # inpaint model
+                
+                images, masks = self.cuda(*items)
 
-                    outputs_img, gen_loss, dis_loss, logs, gen_gan_loss, gen_l1_loss, gen_content_loss, gen_style_loss= self.inpaint_model.process(images,masks)
-                    outputs_merged = (outputs_img * masks) + (images * (1-masks))
+                outputs_img, gen_loss, dis_loss, logs, gen_gan_loss, gen_l1_loss, gen_content_loss, gen_style_loss= self.inpaint_model.process(images,masks)
+                outputs_merged = (outputs_img * masks) + (images * (1-masks))
 
-                    psnr = self.psnr(self.postprocess(images), self.postprocess(outputs_merged))
-                    mae = (torch.sum(torch.abs(images - outputs_merged)) / torch.sum(images)).float()
+                psnr = self.psnr(self.postprocess(images), self.postprocess(outputs_merged))
+                mae = (torch.sum(torch.abs(images - outputs_merged)) / torch.sum(images)).float()
 
-                    logs.append(('psnr', psnr.item()))
-                    logs.append(('mae', mae.item()))
+                logs.append(('psnr', psnr.item()))
+                logs.append(('mae', mae.item()))
 
-                    self.inpaint_model.backward(gen_loss, dis_loss)
-                    iteration = self.inpaint_model.iteration
+                self.inpaint_model.backward(gen_loss, dis_loss)
+                iteration = self.inpaint_model.iteration
 
                 if iteration >= max_iteration:
                     keep_training = False
@@ -129,9 +126,11 @@ class HINT():
 
                 progbar.add(len(images), values=logs if self.config.VERBOSE else [x for x in logs if not x[0].startswith('l_')])
                 if iteration % 10 == 0:
-                        wandb.log({'gen_loss': gen_loss, 'l1_loss': gen_l1_loss, 'style_loss': gen_style_loss,
-                                   'perceptual loss': gen_content_loss, 'gen_gan_loss': gen_gan_loss,
-                                   'dis_loss': dis_loss}, step=iteration)
+                        wandb.log({
+                            'gen_loss': gen_loss, 'l1_loss': gen_l1_loss, 'style_loss': gen_style_loss,
+                            'perceptual loss': gen_content_loss, 'gen_gan_loss': gen_gan_loss,
+                            'dis_loss': dis_loss
+                            }, step=iteration)
 
                 ###################### visualization
                 if iteration % 40 == 0:
@@ -145,17 +144,10 @@ class HINT():
                         img_per_row=1
                     )
 
-
                     path_joint = os.path.join(self.results_path,self.model_name,'train_joint')
-                    name = self.train_dataset.load_name(epoch-1)[:-4]+'.png'
 
                     create_dir(path_joint)
-                    #images_joint.save(os.path.join(path_joint,name[:-4]+'.png'))
                     images_joint.save(os.path.join(path_joint,f'epoch{epoch}.png'))
-
-                    print(name + ' complete!')
-                    
-                ##############
 
                 # log model at checkpoints
                 if self.config.LOG_INTERVAL and iteration % self.config.LOG_INTERVAL == 0:
@@ -163,61 +155,63 @@ class HINT():
 
                 # save model at checkpoints
                 if self.config.SAVE_INTERVAL and iteration % self.config.SAVE_INTERVAL == 0:
-                    self.save()
+                    # perform validation
+                    current_psnr, current_ssim = self.val()
+                    
+                    if current_ssim > self.best_ssim:
+                        print(f'current ssim of value {current_ssim} better than previous ssim of value {self.best_ssim}!')
+                        self.best_ssim = current_ssim
+                        self.save()
+
         print('\nEnd training....')
 
 
     def val(self):
-
         self.inpaint_model.eval()
-        model = self.config.MODEL
-        create_dir(self.results_path)
-        cal_mean_nme = self.cal_mean_nme()
 
         test_loader = DataLoader(
-            dataset=self.test_dataset,
-            batch_size=1,
+            dataset=self.val_dataset,
+            batch_size=4,
         )
         
         psnr_list = []
         ssim_list = []
-        l1_list = []
-        lpips_list = []
+        # l1_list = []
+        # lpips_list = []
         
-        print('here')
         index = 0
+        
+        print('performing validation...')
+        
         for items in test_loader:
             images, masks = self.cuda(*items)
             index += 1
 
-            # inpaint model
-            if model == 2:
+            inputs = (images * (1 - masks))
+            outputs_img = self.inpaint_model(images, masks)
+            outputs_merged = (outputs_img * masks) + (images * (1 - masks))
+            
+            psnr, ssim = self.metric(images, outputs_merged)
+            psnr_list.append(psnr)
+            ssim_list.append(ssim)
+            
+            # if torch.cuda.is_available():
+            #     pl = self.loss_fn_vgg(self.transf(outputs_merged[0].cpu()).cuda(), self.transf(images[0].cpu()).cuda()).item()
+            #     lpips_list.append(pl)
+            # else:
+            #     pl = self.loss_fn_vgg(self.transf(outputs_merged[0].cpu()), self.transf(images[0].cpu())).item()
+            #     lpips_list.append(pl)                
+            
+            # l1_loss = torch.nn.functional.l1_loss(outputs_merged, images, reduction='mean').item()
+            # l1_list.append(l1_loss)
 
+            # print("psnr:{}/{}  ssim:{}/{} l1:{}/{}  lpips:{}/{}  {}".format(psnr, np.average(psnr_list),
+            #                                                                 ssim, np.average(ssim_list),
+            #                                                                 l1_loss, np.average(l1_list),
+            #                                                                 pl, np.average(lpips_list),
+            #                                                                 len(ssim_list)))
 
-                inputs = (images * (1 - masks))
-                outputs_img = self.inpaint_model(images, masks)
-                outputs_merged = (outputs_img * masks) + (images * (1 - masks))
-                
-                psnr, ssim = self.metric(images, outputs_merged)
-                psnr_list.append(psnr)
-                ssim_list.append(ssim)
-                
-                if torch.cuda.is_available():
-                    pl = self.loss_fn_vgg(self.transf(outputs_merged[0].cpu()).cuda(), self.transf(images[0].cpu()).cuda()).item()
-                    lpips_list.append(pl)
-                else:
-                    pl = self.loss_fn_vgg(self.transf(outputs_merged[0].cpu()), self.transf(images[0].cpu())).item()
-                    lpips_list.append(pl)                
-                
-                l1_loss = torch.nn.functional.l1_loss(outputs_merged, images, reduction='mean').item()
-                l1_list.append(l1_loss)
-
-                print("psnr:{}/{}  ssim:{}/{} l1:{}/{}  lpips:{}/{}  {}".format(psnr, np.average(psnr_list),
-                                                                                ssim, np.average(ssim_list),
-                                                                                l1_loss, np.average(l1_list),
-                                                                                pl, np.average(lpips_list),
-                                                                                len(ssim_list)))
-
+            if index and index % self.config.SAVE_INTERVAL == 0:
                 images_joint = stitch_images(
                     self.postprocess(images),
                     self.postprocess(inputs),
@@ -226,42 +220,17 @@ class HINT():
                     img_per_row=1
                 )
 
-                path_masked = os.path.join(self.results_path,self.model_name,'masked4060')
-                path_result = os.path.join(self.results_path, self.model_name,'result4060')
-                path_joint = os.path.join(self.results_path,self.model_name,'joint4060')
+                path_joint = os.path.join(self.results_path,self.model_name,'val_joint')
 
-
-                name = self.test_dataset.load_name(index-1)[:-4]+'.png'
-
-                create_dir(path_masked)
-                create_dir(path_result)
                 create_dir(path_joint)
+                images_joint.save(os.path.join(path_joint,f'index{index}.png'))
 
-                masked_images = self.postprocess(images*(1-masks)+masks)[0]
-                images_result = self.postprocess(outputs_merged)[0]
+        # report back metrics on validation set
+        return np.mean(psnr_list), np.mean(ssim_list)
 
-                print(os.path.join(path_joint,name[:-4]+'.png'))
 
-                images_joint.save(os.path.join(path_joint,name[:-4]+'.png'))
-                imsave(masked_images,os.path.join(path_masked,name))
-                imsave(images_result,os.path.join(path_result,name))
-
-                print(name + ' complete!')
-
-            # inpaint with joint model
-        torch.onnx.export(model, images_joint, 'model.onnx')
-        wandb.save('model.onnx')
-        print('\nEnd Testing')
-        
-        print('edge_psnr_ave:{} edge_ssim_ave:{} l1_ave:{} lpips:{}'.format(np.average(psnr_list),
-                                                                                 np.average(ssim_list),
-                                                                                 np.average(l1_list),
-                                                                                 np.average(lpips_list)))
-        
-    
     def test(self):
         self.inpaint_model.eval()
-        model = self.config.MODEL
         create_dir(self.results_path)
 
         test_loader = DataLoader(
@@ -274,17 +243,15 @@ class HINT():
             images, masks = self.cuda(*items)
             index += 1
 
-            # inpaint model
-            if model == 2:
-                outputs_img = self.inpaint_model(images, masks)
-                outputs_merged = (outputs_img * masks) + (images * (1 - masks))
+            outputs_img = self.inpaint_model(images, masks)
+            outputs_merged = (outputs_img * masks) + (images * (1 - masks))
 
-                path_result = os.path.join(self.results_path, self.model_name,'test_result')
-                create_dir(path_result)
-                name_npy = self.test_dataset.load_name(index-1)[:-4]+'.npy'
+            path_result = os.path.join(self.results_path, self.model_name,'test_result')
+            create_dir(path_result)
+            name_npy = self.test_dataset.load_name(index-1)[:-4]+'.npy'
 
-                images_result = self.postprocess(outputs_merged, integer=False)[0].cpu().numpy().squeeze()                
-                np.save(os.path.join(path_result,name_npy), images_result)
+            images_result = self.postprocess(outputs_merged, integer=False)[0].cpu().detach().numpy().squeeze()
+            np.save(os.path.join(path_result,name_npy), images_result)
 
 
     def log(self, logs):
@@ -306,7 +273,7 @@ class HINT():
         if integer:
             return img.int()
         else:
-            return img.float()
+            return img
 
 
     def metric(self, gt, pre):
@@ -322,18 +289,3 @@ class HINT():
         ssim = compare_ssim(gt, pre, multichannel=True, data_range=255)
 
         return psnr, ssim
-
-
-    class cal_mean_nme():
-        sum = 0
-        amount = 0
-        mean_nme = 0
-
-        def __call__(self, nme):
-            self.sum += nme
-            self.amount += 1
-            self.mean_nme = self.sum / self.amount
-            return self.mean_nme
-
-        def get_mean_nme(self):
-            return self.mean_nme

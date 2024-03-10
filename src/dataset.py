@@ -7,15 +7,17 @@ from torchvision import transforms
 from PIL import Image
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, config, training=True):
+    def __init__(self, config, training):
         super(Dataset, self).__init__()
         self.config = config
         self.training = training
         
         # get flist based on the dataset mode
-        if self.training:
+        if self.training == 'train':
             flist = config.TRAIN_INPAINT_IMAGE_FLIST
-        else:
+        if self.training == 'val':
+            flist = config.VAL_INPAINT_IMAGE_FLIST
+        if self.training == 'test':
             flist = config.TEST_INPAINT_IMAGE_FLIST
         
         self.data = self.load_flist(flist)
@@ -33,7 +35,7 @@ class Dataset(torch.utils.data.Dataset):
 
 
     def __getitem__(self, index):
-        if self.training:
+        if self.training == 'train':
             # update percentile
             self.current_iteration += 1
             if self.current_iteration <= self.fixed_percentile_at * self.max_iterations:
@@ -62,7 +64,7 @@ class Dataset(torch.utils.data.Dataset):
         mask_t = self.load_mask(img_t).float()
 
         # test (inference) mode 
-        if not self.training:
+        if self.training == 'test':
             img_t = torch.nan_to_num(img_t, nan=0)    
         
         # make 3 channels by copying the image
@@ -87,7 +89,7 @@ class Dataset(torch.utils.data.Dataset):
         positive = 1
         
         # if mode set to training, generate mask on the fly
-        if self.training:
+        if self.training in ['train', 'val']:
             # get random axis choice
             axis = np.random.choice(['i_line', 'x_line'], 1)[0]
 
@@ -148,5 +150,5 @@ class Dataset(torch.utils.data.Dataset):
 
     def resize(self, size):
         return transforms.Compose([
-            transforms.Resize(size=size, interpolation=Image.BILINEAR),
+            transforms.Resize(size=size, interpolation=Image.BILINEAR, antialias=True),
         ])

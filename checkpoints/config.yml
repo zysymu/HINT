@@ -1,9 +1,9 @@
 MODE: 1             # 1: train, 2: test
-MODEL: 2            # 2: inpaint model
 SEED: 10            # random seed
 GPU: [0]            # list of gpu ids
 
 TRAIN_INPAINT_IMAGE_FLIST: 
+VAL_INPAINT_IMAGE_FLIST: 
 TEST_INPAINT_IMAGE_FLIST: 
 
 LR: 0.0001                    # learning rate
