@@ -256,9 +256,7 @@ class HINT():
 
     def log(self, logs):
         with open(self.log_file, 'a') as f:
-            print('load the generator:')
             f.write('%s\n' % ' '.join([str(item[1]) for item in logs]))
-            print('finish load')
 
 
     def cuda(self, *args):
