@@ -188,7 +188,8 @@ class HINT():
             index += 1
 
             inputs = (images * (1 - masks))
-            outputs_img = self.inpaint_model(images, masks)
+            with torch.no_grad():
+                outputs_img = self.inpaint_model(images, masks)
             outputs_merged = (outputs_img * masks) + (images * (1 - masks))
             
             psnr, ssim = self.metric(images, outputs_merged)
@@ -243,7 +244,8 @@ class HINT():
             images, masks = self.cuda(*items)
             index += 1
 
-            outputs_img = self.inpaint_model(images, masks)
+            with torch.no_grad():
+                outputs_img = self.inpaint_model(images, masks)
             outputs_merged = (outputs_img * masks) + (images * (1 - masks))
 
             path_result = os.path.join(self.results_path, self.model_name,'test_result')

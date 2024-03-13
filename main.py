@@ -6,7 +6,7 @@ import torch
 import argparse
 from shutil import copyfile
 from src.config import Config
-from src.lafin import HINT
+from src.HINT import HINT
 import wandb
 
 def main(mode=None):
