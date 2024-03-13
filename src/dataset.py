@@ -31,7 +31,7 @@ class Dataset(torch.utils.data.Dataset):
         
         self.current_iteration = 0
         self.max_iterations = int(float((self.config.MAX_ITERS)))
-        self.fixed_percentile_at = 0.5  # pct of iterations after which percentile becomes fixed at 25
+        self.fixed_percentile_at = 0.8  # pct of iterations after which percentile becomes fixed at 25
 
 
     def __len__(self):
