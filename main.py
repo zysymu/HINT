@@ -1,5 +1,4 @@
 import os
-import cv2
 import random
 import numpy as np
 import torch
@@ -30,12 +29,6 @@ def main(mode=None):
         else:
             print('Cuda is unavailable, use cpu')
             config.DEVICE = torch.device("cpu")
-
-
-
-        # set cv2 running threads to 1 (prevents deadlocks with pytorch dataloader)
-        cv2.setNumThreads(0)
-
 
         # initialize random seed
         torch.manual_seed(config.SEED)
