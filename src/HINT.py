@@ -133,7 +133,7 @@ class HINT():
                             }, step=iteration)
 
                 ###################### visualization
-                if iteration % 40 == 0:
+                if iteration % 500 == 0:
                     create_dir(self.results_path)
                     inputs = (images * (1 - masks))
                     images_joint = stitch_images(
